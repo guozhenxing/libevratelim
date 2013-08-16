@@ -211,7 +211,7 @@ evratelim_bev_read(evratelim_bev * rl_bev, ssize_t bytes) {
     {
         t_bucket_update_read(rl_bev->group->rate_limit, bytes);
 
-        if (t_bucket_write_limit(rl_bev->group->rate_limit) <= 0) {
+        if (t_bucket_read_limit(rl_bev->group->rate_limit) <= 0) {
             _group_suspend_reading(rl_bev->group);
         } else if (rl_bev->group->write_suspended == true) {
             _group_resume_reading(rl_bev->group);
