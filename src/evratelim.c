@@ -188,11 +188,11 @@ _group_refill_evcb(int sock, short which, void * arg) {
 
 void
 evratelim_bev_write(evratelim_bev * rl_bev, ssize_t bytes) {
-    t_bucket_write(rl_bev->group->rate_limit, bytes);
-
     pthread_mutex_lock(&rl_bev->lock);
     pthread_mutex_lock(&rl_bev->group->lock);
     {
+        t_bucket_update_write(rl_bev->group->rate_limit, bytes);
+
         if (t_bucket_write_limit(rl_bev->group->rate_limit) <= 0) {
             _group_suspend_writing(rl_bev->group);
         } else if (rl_bev->group->write_suspended == true) {
@@ -205,11 +205,11 @@ evratelim_bev_write(evratelim_bev * rl_bev, ssize_t bytes) {
 
 void
 evratelim_bev_read(evratelim_bev * rl_bev, ssize_t bytes) {
-    t_bucket_read(rl_bev->group->rate_limit, bytes);
-
     pthread_mutex_lock(&rl_bev->lock);
     pthread_mutex_lock(&rl_bev->group->lock);
     {
+        t_bucket_update_read(rl_bev->group->rate_limit, bytes);
+
         if (t_bucket_write_limit(rl_bev->group->rate_limit) <= 0) {
             _group_suspend_reading(rl_bev->group);
         } else if (rl_bev->group->write_suspended == true) {
