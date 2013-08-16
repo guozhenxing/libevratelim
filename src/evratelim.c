@@ -9,6 +9,7 @@
 #include <sys/queue.h>
 
 #include <event2/event.h>
+#include <event2/util.h>
 #include <event2/bufferevent.h>
 
 #include "token_bucket.h"
@@ -218,6 +219,11 @@ evratelim_bev_read(evratelim_bev * rl_bev, ssize_t bytes) {
     }
     pthread_mutex_unlock(&rl_bev->group->lock);
     pthread_mutex_unlock(&rl_bev->lock);
+}
+
+struct bufferevent *
+evratelim_bev_bufferevent(evratelim_bev * bev) {
+    return bev->bev;
 }
 
 evratelim_group *

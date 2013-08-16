@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <limits.h>
+#include <event2/util.h>
 
 #include "token_bucket.h"
 
