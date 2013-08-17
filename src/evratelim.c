@@ -20,9 +20,9 @@ struct evratelim_bev_s {
     struct bufferevent * bev;
     evratelim_group    * group;
 
-    evratelim_suspend_cb suspend_cb;
-    evratelim_resume_cb  resume_cb;
-    void               * cbarg;
+    evratelim_cb suspend_cb;
+    evratelim_cb resume_cb;
+    void       * cbarg;
 
     TAILQ_ENTRY(evratelim_bev_s) next;
 };
@@ -276,8 +276,8 @@ evratelim_add_bufferevent(struct bufferevent * bev, evratelim_group * group) {
 
 void
 evratelim_bev_setcb(evratelim_bev * rl_bev,
-                    evratelim_suspend_cb s_cb,
-                    evratelim_resume_cb r_cb, void * cbarg) {
+                    evratelim_cb s_cb,
+                    evratelim_cb r_cb, void * cbarg) {
     rl_bev->suspend_cb = s_cb;
     rl_bev->resume_cb  = r_cb;
     rl_bev->cbarg      = cbarg;
