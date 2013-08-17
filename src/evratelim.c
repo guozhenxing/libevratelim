@@ -58,110 +58,82 @@ _group_get_random_rlbev(evratelim_group * group) {
 }
 
 static void
-_group_resume_writing(evratelim_group * group) {
+_group_resume(evratelim_group * group, short what) {
     evratelim_bev * first;
     evratelim_bev * rl_bev;
-
-    group->write_suspended = false;
+    evratelim_cb  * cb;
 
     first = _group_get_random_rlbev(group);
 
     for (rl_bev = first; rl_bev; rl_bev = TAILQ_NEXT(rl_bev, next)) {
         pthread_mutex_lock(&rl_bev->lock);
-        {
-            if (!(bufferevent_get_enabled(rl_bev->bev) & EV_WRITE)) {
-                if (rl_bev->resume_cb) {
-                    (rl_bev->resume_cb)(rl_bev, EV_WRITE, rl_bev->cbarg);
-                }
+
+        if (!(bufferevent_get_enabled(rl_bev->bev) & what)) {
+            if (rl_bev->resume_cb) {
+                (rl_bev->resume_cb)(rl_bev, what, rl_bev->cbarg);
             }
         }
+
         pthread_mutex_unlock(&rl_bev->lock);
     }
 
     for (rl_bev = TAILQ_FIRST(&group->members); rl_bev && rl_bev != first;
          rl_bev = TAILQ_NEXT(rl_bev, next)) {
         pthread_mutex_lock(&rl_bev->lock);
-        {
-            if (!(bufferevent_get_enabled(rl_bev->bev) & EV_WRITE)) {
-                if (rl_bev->resume_cb) {
-                    (rl_bev->resume_cb)(rl_bev, EV_WRITE, rl_bev->cbarg);
-                }
+
+        if (!(bufferevent_get_enabled(rl_bev->bev) & what)) {
+            if (rl_bev->resume_cb) {
+                (rl_bev->resume_cb)(rl_bev, what, rl_bev->cbarg);
             }
         }
+
         pthread_mutex_unlock(&rl_bev->lock);
     }
+}
+
+static void
+_group_suspend(evratelim_group * group, short what) {
+    evratelim_bev * rl_bev;
+
+    TAILQ_FOREACH(rl_bev, &group->members, next) {
+        pthread_mutex_lock(&rl_bev->lock);
+
+        if ((bufferevent_get_enabled(rl_bev->bev) & what)) {
+            if (rl_bev->suspend_cb) {
+                (rl_bev->suspend_cb)(rl_bev, what, rl_bev->cbarg);
+            }
+        }
+
+        pthread_mutex_unlock(&rl_bev->lock);
+    }
+}
+
+static void
+_group_resume_writing(evratelim_group * group) {
+    group->write_suspended = false;
+
+    return _group_resume(group, EV_WRITE);
 }
 
 static void
 _group_resume_reading(evratelim_group * group) {
-    evratelim_bev * first;
-    evratelim_bev * rl_bev;
-
     group->read_suspended = false;
 
-    first = _group_get_random_rlbev(group);
-
-    for (rl_bev = first; rl_bev; rl_bev = TAILQ_NEXT(rl_bev, next)) {
-        pthread_mutex_lock(&rl_bev->lock);
-        {
-            if (!(bufferevent_get_enabled(rl_bev->bev) & EV_READ)) {
-                if (rl_bev->resume_cb) {
-                    (rl_bev->resume_cb)(rl_bev, EV_READ, rl_bev->cbarg);
-                }
-            }
-        }
-        pthread_mutex_unlock(&rl_bev->lock);
-    }
-
-    for (rl_bev = TAILQ_FIRST(&group->members); rl_bev && rl_bev != first; rl_bev = TAILQ_NEXT(rl_bev, next)) {
-        pthread_mutex_lock(&rl_bev->lock);
-        {
-            if (!(bufferevent_get_enabled(rl_bev->bev) & EV_READ)) {
-                if (rl_bev->resume_cb) {
-                    (rl_bev->resume_cb)(rl_bev, EV_READ, rl_bev->cbarg);
-                }
-            }
-        }
-        pthread_mutex_unlock(&rl_bev->lock);
-    }
+    return _group_resume(group, EV_READ);
 }
 
 static void
 _group_suspend_writing(evratelim_group * group) {
-    evratelim_bev * rl_bev;
-
     group->write_suspended = true;
 
-    TAILQ_FOREACH(rl_bev, &group->members, next) {
-        pthread_mutex_lock(&rl_bev->lock);
-        {
-            if ((bufferevent_get_enabled(rl_bev->bev) & EV_WRITE)) {
-                if (rl_bev->suspend_cb) {
-                    (rl_bev->suspend_cb)(rl_bev, EV_WRITE, rl_bev->cbarg);
-                }
-            }
-        }
-        pthread_mutex_unlock(&rl_bev->lock);
-    }
+    return _group_suspend(group, EV_WRITE);
 }
 
 static void
 _group_suspend_reading(evratelim_group * group) {
-    evratelim_bev * rl_bev;
-
     group->read_suspended = true;
 
-    TAILQ_FOREACH(rl_bev, &group->members, next) {
-        pthread_mutex_lock(&rl_bev->lock);
-        {
-            if ((bufferevent_get_enabled(rl_bev->bev) & EV_READ)) {
-                if (rl_bev->suspend_cb) {
-                    (rl_bev->suspend_cb)(rl_bev, EV_READ, rl_bev->cbarg);
-                }
-            }
-        }
-        pthread_mutex_unlock(&rl_bev->lock);
-    }
+    return _group_suspend(group, EV_READ);
 }
 
 static void
