@@ -83,7 +83,7 @@ main(int argc, char **argv) {
     evbase              = event_base_new();
 
     /* set to 1Mb/s (262144 B/s) */
-    rl_group            = evratelim_group_new(evbase, 262144, 262144);
+    rl_group            = evratelim_group_new(evbase, 1048576, 1048576);
 
     sin.sin_family      = AF_INET;
     sin.sin_addr.s_addr = htonl(0x7f000001);
