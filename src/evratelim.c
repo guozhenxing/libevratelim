@@ -16,7 +16,6 @@
 #include "evratelim.h"
 
 struct evratelim_bev_s {
-    pthread_mutex_t      lock;
     struct bufferevent * bev;
     evratelim_group    * group;
 
@@ -47,6 +46,13 @@ _group_get_random_rlbev(evratelim_group * group) {
     evratelim_bev * rl_bev;
     int             where;
 
+    pthread_mutex_lock(&group->lock);
+
+    if (TAILQ_EMPTY(&group->members)) {
+        pthread_mutex_unlock(&group->lock);
+        return NULL;
+    }
+
     where  = rand() % group->n_members;
     rl_bev = TAILQ_FIRST(&group->members);
 
@@ -54,6 +60,7 @@ _group_get_random_rlbev(evratelim_group * group) {
         rl_bev = TAILQ_NEXT(rl_bev, next);
     }
 
+    pthread_mutex_unlock(&group->lock);
     return rl_bev;
 }
 
@@ -63,77 +70,86 @@ _group_resume(evratelim_group * group, short what) {
     evratelim_bev * rl_bev;
     evratelim_cb  * cb;
 
-    first = _group_get_random_rlbev(group);
+    pthread_mutex_lock(&group->lock);
+
+    if (!(first = _group_get_random_rlbev(group))) {
+        pthread_mutex_unlock(&group->lock);
+        return;
+    }
 
     for (rl_bev = first; rl_bev; rl_bev = TAILQ_NEXT(rl_bev, next)) {
-        pthread_mutex_lock(&rl_bev->lock);
-
-        if (!(bufferevent_get_enabled(rl_bev->bev) & what)) {
-            if (rl_bev->resume_cb) {
-                (rl_bev->resume_cb)(rl_bev, what, rl_bev->cbarg);
-            }
+        if (rl_bev->resume_cb) {
+            (rl_bev->resume_cb)(rl_bev, what, rl_bev->cbarg);
         }
-
-        pthread_mutex_unlock(&rl_bev->lock);
     }
 
     for (rl_bev = TAILQ_FIRST(&group->members); rl_bev && rl_bev != first;
          rl_bev = TAILQ_NEXT(rl_bev, next)) {
-        pthread_mutex_lock(&rl_bev->lock);
-
-        if (!(bufferevent_get_enabled(rl_bev->bev) & what)) {
-            if (rl_bev->resume_cb) {
-                (rl_bev->resume_cb)(rl_bev, what, rl_bev->cbarg);
-            }
+        if (rl_bev->resume_cb) {
+            (rl_bev->resume_cb)(rl_bev, what, rl_bev->cbarg);
         }
-
-        pthread_mutex_unlock(&rl_bev->lock);
     }
+
+    pthread_mutex_unlock(&group->lock);
 }
 
 static void
 _group_suspend(evratelim_group * group, short what) {
     evratelim_bev * rl_bev;
 
+    pthread_mutex_lock(&group->lock);
+
     TAILQ_FOREACH(rl_bev, &group->members, next) {
-        pthread_mutex_lock(&rl_bev->lock);
-
-        if ((bufferevent_get_enabled(rl_bev->bev) & what)) {
-            if (rl_bev->suspend_cb) {
-                (rl_bev->suspend_cb)(rl_bev, what, rl_bev->cbarg);
-            }
+        if (rl_bev->suspend_cb) {
+            (rl_bev->suspend_cb)(rl_bev, what, rl_bev->cbarg);
         }
-
-        pthread_mutex_unlock(&rl_bev->lock);
     }
+
+    pthread_mutex_unlock(&group->lock);
 }
 
 static void
 _group_resume_writing(evratelim_group * group) {
+    pthread_mutex_lock(&group->lock);
+
     group->write_suspended = false;
 
-    return _group_resume(group, EV_WRITE);
+    _group_resume(group, EV_WRITE);
+
+    pthread_mutex_unlock(&group->lock);
 }
 
 static void
 _group_resume_reading(evratelim_group * group) {
+    pthread_mutex_lock(&group->lock);
+
     group->read_suspended = false;
 
-    return _group_resume(group, EV_READ);
+    _group_resume(group, EV_READ);
+
+    pthread_mutex_unlock(&group->lock);
 }
 
 static void
 _group_suspend_writing(evratelim_group * group) {
+    pthread_mutex_lock(&group->lock);
+
     group->write_suspended = true;
 
-    return _group_suspend(group, EV_WRITE);
+    _group_suspend(group, EV_WRITE);
+
+    pthread_mutex_unlock(&group->lock);
 }
 
 static void
 _group_suspend_reading(evratelim_group * group) {
+    pthread_mutex_lock(&group->lock);
+
     group->read_suspended = true;
 
-    return _group_suspend(group, EV_READ);
+    _group_suspend(group, EV_READ);
+
+    pthread_mutex_unlock(&group->lock);
 }
 
 static void
@@ -147,12 +163,12 @@ _group_refill_evcb(int sock, short which, void * arg) {
         t_bucket_update(group->rate_limit);
 
         if (group->read_suspended == true &&
-            (t_bucket_read_limit(group->rate_limit) >= 64)) {
+            (t_bucket_read_limit(group->rate_limit) >= 1)) {
             _group_resume_reading(group);
         }
 
         if (group->write_suspended == true &&
-            (t_bucket_write_limit(group->rate_limit) >= 64)) {
+            (t_bucket_write_limit(group->rate_limit) >= 1)) {
             _group_resume_writing(group);
         }
     }
@@ -161,7 +177,6 @@ _group_refill_evcb(int sock, short which, void * arg) {
 
 void
 evratelim_bev_write(evratelim_bev * rl_bev, ssize_t bytes) {
-    pthread_mutex_lock(&rl_bev->lock);
     pthread_mutex_lock(&rl_bev->group->lock);
     {
         t_bucket_update_write(rl_bev->group->rate_limit, bytes);
@@ -173,12 +188,10 @@ evratelim_bev_write(evratelim_bev * rl_bev, ssize_t bytes) {
         }
     }
     pthread_mutex_unlock(&rl_bev->group->lock);
-    pthread_mutex_unlock(&rl_bev->lock);
 }
 
 void
 evratelim_bev_read(evratelim_bev * rl_bev, ssize_t bytes) {
-    pthread_mutex_lock(&rl_bev->lock);
     pthread_mutex_lock(&rl_bev->group->lock);
     {
         t_bucket_update_read(rl_bev->group->rate_limit, bytes);
@@ -190,7 +203,6 @@ evratelim_bev_read(evratelim_bev * rl_bev, ssize_t bytes) {
         }
     }
     pthread_mutex_unlock(&rl_bev->group->lock);
-    pthread_mutex_unlock(&rl_bev->lock);
 }
 
 struct bufferevent *
@@ -224,18 +236,13 @@ evratelim_group_new(struct event_base * evbase, size_t read_rate, size_t write_r
 
 evratelim_bev *
 evratelim_add_bufferevent(struct bufferevent * bev, evratelim_group * group) {
-    evratelim_bev     * rl_bev;
-    pthread_mutexattr_t attr;
+    evratelim_bev * rl_bev;
 
     pthread_mutex_lock(&group->lock);
     {
-        rl_bev        = calloc(sizeof(evratelim_bev), 1);
-        rl_bev->bev   = bev;
-        rl_bev->group = group;
-
-        pthread_mutexattr_init(&attr);
-        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-        pthread_mutex_init(&rl_bev->lock, &attr);
+        rl_bev            = calloc(sizeof(evratelim_bev), 1);
+        rl_bev->bev       = bev;
+        rl_bev->group     = group;
 
         group->n_members += 1;
 
@@ -259,8 +266,6 @@ void
 evratelim_bev_remove(evratelim_bev * rl_bev) {
     evratelim_group * group;
 
-    pthread_mutex_lock(&rl_bev->lock);
-
     group = rl_bev->group;
 
     pthread_mutex_lock(&group->lock);
@@ -272,5 +277,27 @@ evratelim_bev_remove(evratelim_bev * rl_bev) {
         free(rl_bev);
     }
     pthread_mutex_unlock(&group->lock);
+}
+
+bool
+evratelim_read_suspended(evratelim_group * group) {
+    bool ret;
+
+    pthread_mutex_lock(&group->lock);
+    ret = group->read_suspended;
+    pthread_mutex_unlock(&group->lock);
+
+    return ret;
+}
+
+bool
+evratelim_write_suspended(evratelim_group * group) {
+    bool ret;
+
+    pthread_mutex_lock(&group->lock);
+    ret = group->write_suspended;
+    pthread_mutex_unlock(&group->lock);
+
+    return ret;
 }
 

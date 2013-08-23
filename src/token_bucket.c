@@ -40,7 +40,7 @@ _tb_cfg_new(size_t r_rate, size_t w_rate) {
     cfg->write_rate           = w_rate;
     cfg->write_max            = w_rate;
 
-    cfg->tick_timeout.tv_sec  = 2;
+    cfg->tick_timeout.tv_sec  = 1;
     cfg->tick_timeout.tv_usec = 0;
     cfg->msec_per_tick        = (2 * 1000) + (0 & 0x000fffff) / 1000;
 

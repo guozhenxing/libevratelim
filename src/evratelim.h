@@ -19,5 +19,8 @@ void                 evratelim_bev_write(evratelim_bev * rl_bev, ssize_t len);
 
 struct bufferevent * evratelim_bev_bufferevent(evratelim_bev * rl_bev);
 
+bool evratelim_read_suspended(evratelim_group *);
+bool evratelim_write_suspended(evratelim_group *);
+
 #endif
 
